@@ -81,7 +81,7 @@ valueParser =
             [ Parser.succeed NumberLiteral
                 |= Parser.float
             , Parser.succeed Variable
-                |. Parser.keyword "x"
+                |. Parser.symbol "x"
             , Parser.succeed Parenthesized
                 |. Parser.symbol "("
                 |. Parser.spaces

@@ -2,7 +2,7 @@
 BUGS
 
 [x] `sin(x)` says "Expecting end of string at 6"
-[ ] Asymptotes not working in `tan(x)` when scale is low.
+[ ] Asymptotes not working in `tan(x)` and `1/x` when scale is low.
 
 TODO:
 

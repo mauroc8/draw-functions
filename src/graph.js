@@ -102,11 +102,7 @@ export default class Graph extends HTMLElement {
 
         cx.beginPath();
 
-        for (
-            let y = lowerBound.y;
-            y < upperBound.y + 1;
-            y += 1
-        ) {
+        for (let y = lowerBound.y; y < upperBound.y + 1; y += 1) {
             const viewportY = this.worldToViewport({
                 x: 0,
                 y: Math.floor(y),
@@ -118,11 +114,7 @@ export default class Graph extends HTMLElement {
             cx.lineTo(width, viewportY);
         }
 
-        for (
-            let x = lowerBound.x;
-            x < upperBound.x + 1;
-            x += 1
-        ) {
+        for (let x = lowerBound.x; x < upperBound.x + 1; x += 1) {
             const viewportX = this.worldToViewport({
                 x: Math.floor(x),
                 y: 0,
@@ -134,7 +126,23 @@ export default class Graph extends HTMLElement {
             cx.lineTo(viewportX, height);
         }
 
-        cx.strokeStyle = "#eee";
+        /* We make the grid more invisible when the scale is lower.
+           Otherwise we'd get a lot of visual noise from the grid lines.
+        */
+
+        const lerp = (a, b, t) => {
+            // Clamp between 0 and 1
+            t = t > 1 ? 1 : t < 0 ? 0 : t;
+
+            return (1 - t) * a + b * t;
+        };
+
+        // When scale is 0, opacity is 0.01
+        // When scale is 100, opacity is 0.1
+
+        const opacity = lerp(0.01, 0.1, this.scale.x / 100);
+
+        cx.strokeStyle = `rgba(0, 0, 0, ${opacity})`;
 
         cx.stroke();
     }

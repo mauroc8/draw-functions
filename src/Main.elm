@@ -35,6 +35,8 @@ type alias Model =
     , offset : IntVector2
     , scale : IntVector2
     , mouseState : MouseState
+    , isResizingGraph : Bool
+    , windowHeight : Int
     }
 
 
@@ -63,9 +65,11 @@ init flags =
                 }
       , graphWidth = 300
       , graphHeight = 350
-      , offset = { x = 60, y = 60 }
+      , offset = { x = 160, y = 160 }
       , scale = { x = 20, y = 20 }
       , mouseState = NotClicking
+      , isResizingGraph = False
+      , windowHeight = 100
       }
     , Task.perform GotBrowserViewport Browser.Dom.getViewport
     )
@@ -84,9 +88,14 @@ flagsDecoder =
 
 type alias FunctionModel =
     { inputValue : String
-    , parseError : Maybe (List Parser.DeadEnd)
+    , parseError : Maybe ( List Parser.DeadEnd, ErrorViewState )
     , stringFunction : String
     }
+
+
+type ErrorViewState
+    = Opened
+    | Closed
 
 
 type MouseState
@@ -118,6 +127,9 @@ type Msg
     | MouseMovedOnGraph IntVector2
     | MouseUp
     | WheelEvtOnGraph Float IntVector2
+    | ClickedOnHelpButton FunctionColor
+    | StartedResizingGraph
+    | MouseMovedWhileResizingGraph IntVector2
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -137,12 +149,12 @@ update msg model =
             )
 
         ResizedWindow width height ->
-            ( updateGraphSize width height model
+            ( updateWindowDimensions width height model
             , Cmd.none
             )
 
         GotBrowserViewport browserViewport ->
-            ( updateGraphSize
+            ( updateWindowDimensions
                 (floor browserViewport.viewport.width)
                 (floor browserViewport.viewport.height)
                 model
@@ -166,6 +178,21 @@ update msg model =
 
         WheelEvtOnGraph deltaY mouseCoords ->
             ( updateGraphScale deltaY mouseCoords model
+            , Cmd.none
+            )
+
+        ClickedOnHelpButton color ->
+            ( toggleHelpMessage color model
+            , Cmd.none
+            )
+
+        StartedResizingGraph ->
+            ( { model | isResizingGraph = True }
+            , Cmd.none
+            )
+
+        MouseMovedWhileResizingGraph mouseCoords ->
+            ( updateGraphHeight mouseCoords.y model
             , Cmd.none
             )
 
@@ -195,7 +222,7 @@ updateFunctionModel inputValue lastModel =
         parseError =
             case parseResult of
                 Err deadEnds ->
-                    Just deadEnds
+                    Just ( deadEnds, Closed )
 
                 Ok _ ->
                     Nothing
@@ -215,9 +242,18 @@ updateFunctionModel inputValue lastModel =
     }
 
 
-updateGraphSize : Int -> Int -> Model -> Model
-updateGraphSize width height model =
-    { model | graphWidth = width }
+updateWindowDimensions : Int -> Int -> Model -> Model
+updateWindowDimensions width height model =
+    { model
+        | graphWidth = width
+        , graphHeight = clamp 100 (height - 100) model.graphHeight
+        , windowHeight = height
+    }
+
+
+updateGraphHeight : Int -> Model -> Model
+updateGraphHeight height model =
+    { model | graphHeight = clamp 100 (model.windowHeight - 100) height }
 
 
 updateGraphScale : Float -> IntVector2 -> Model -> Model
@@ -314,6 +350,33 @@ stopClicking model =
     { model
         | mouseState = NotClicking
         , offset = getDraggedOffset model
+        , isResizingGraph = False
+    }
+
+
+toggleHelpMessage : FunctionColor -> Model -> Model
+toggleHelpMessage color model =
+    case color of
+        Blue ->
+            { model | firstFunction = toggleFunctionHelpMessage model.firstFunction }
+
+        Green ->
+            { model | secondFunction = toggleFunctionHelpMessage model.secondFunction }
+
+
+toggleFunctionHelpMessage : FunctionModel -> FunctionModel
+toggleFunctionHelpMessage functionModel =
+    { functionModel
+        | parseError =
+            case functionModel.parseError of
+                Just ( deadEnds, Opened ) ->
+                    Just ( deadEnds, Closed )
+
+                Just ( deadEnds, Closed ) ->
+                    Just ( deadEnds, Opened )
+
+                Nothing ->
+                    Nothing
     }
 
 
@@ -326,6 +389,14 @@ subscriptions model =
     Sub.batch
         [ Browser.Events.onResize ResizedWindow
         , Browser.Events.onMouseUp (Json.Decode.succeed MouseUp)
+        , if model.isResizingGraph then
+            Sub.batch
+                [ Browser.Events.onMouseMove
+                    (Json.Decode.map MouseMovedWhileResizingGraph mouseEventDecoder)
+                ]
+
+          else
+            Sub.none
         ]
 
 
@@ -343,17 +414,31 @@ view model =
     Html.div
         [ Attr.class "font-sans text-gray-900"
         ]
-        [ graphElement model
-        , functionInput
-            { functionModel = model.firstFunction
-            , color = Blue
-            , onInputMsg = UpdateFirstInputValue
-            }
-        , functionInput
-            { functionModel = model.secondFunction
-            , color = Green
-            , onInputMsg = UpdateSecondInputValue
-            }
+        [ Html.h1
+            [ Attr.class "font-bold mx-2 mt-2 text-gray-600 absolute hover:text-gray-800 transition duration-300 text-sm" ]
+            [ Html.text "DRAW FUNCTIONS" ]
+        , graphElement model
+        , Html.div
+            [ Attr.class "block w-full bg-gray-200 cursor-row-resize h-1"
+            , Evts.preventDefaultOn "mousedown"
+                (Json.Decode.succeed StartedResizingGraph
+                    |> Json.Decode.map alwaysPreventDefault
+                )
+            ]
+            []
+        , Html.div
+            [ Attr.class "md:flex" ]
+            [ functionInput
+                { functionModel = model.firstFunction
+                , color = Blue
+                , onInputMsg = UpdateFirstInputValue
+                }
+            , functionInput
+                { functionModel = model.secondFunction
+                , color = Green
+                , onInputMsg = UpdateSecondInputValue
+                }
+            ]
         ]
 
 
@@ -452,36 +537,54 @@ functionInput { functionModel, color, onInputMsg } =
                     "focus:border-green-500"
     in
     Html.div
-        []
-        [ Html.div
-            [ Attr.class ("m-2 font-mono " ++ textColor600)
-            ]
-            [ Html.text "y = "
-            , Html.input
-                [ Attr.value functionModel.inputValue
-                , Evts.onInput onInputMsg
-                , Attr.class
-                    "rounded border transition duration-300 focus:bg-transparent px-1 focus:outline-none"
-                , case functionModel.parseError of
-                    Just _ ->
-                        Attr.class "border-red-400 bg-red-100"
+        [ Attr.class "p-2 md:w-2/4"
+        ]
+        [ Html.span [ Attr.class ("font-mono " ++ textColor600) ] [ Html.text "y = " ]
+        , Html.input
+            [ Attr.class ("font-mono " ++ textColor600)
+            , Attr.value functionModel.inputValue
+            , Evts.onInput onInputMsg
+            , Attr.class
+                "rounded border transition duration-300 focus:bg-transparent px-1 focus:outline-none"
+            , case functionModel.parseError of
+                Just _ ->
+                    Attr.class "border-red-400 bg-red-100"
 
-                    Nothing ->
-                        Attr.class
-                            ("border-gray-200 focus:border-opacity-50 "
-                                ++ bgColor100
-                                ++ " "
-                                ++ focusBorderColor500
-                            )
-                ]
-                []
+                Nothing ->
+                    Attr.class
+                        ("border-gray-200 focus:border-opacity-50 "
+                            ++ bgColor100
+                            ++ " "
+                            ++ focusBorderColor500
+                        )
             ]
+            []
         , case functionModel.parseError of
-            Just deadEnds ->
-                viewErrorMessage functionModel.inputValue deadEnds
+            Just ( deadEnds, openStatus ) ->
+                Html.button
+                    [ Attr.class "px-1 rounded mx-1 focus:outline-none border border-red-100 focus:border-red-500"
+                    , Attr.class
+                        (case openStatus of
+                            Opened ->
+                                "bg-red-400 text-white"
+
+                            Closed ->
+                                "bg-red-100"
+                        )
+                    , Evts.onClick (ClickedOnHelpButton color)
+                    ]
+                    [ Html.text "?" ]
 
             Nothing ->
-                Html.div [] [ Html.text " " ]
+                Html.text ""
+        , case functionModel.parseError of
+            Just ( deadEnds, Opened ) ->
+                Html.div
+                    [ Attr.class "text-xs bg-red-100 rounded-md p-2 border border-red-200 mt-2" ]
+                    [ viewErrorMessage functionModel.inputValue deadEnds ]
+
+            _ ->
+                Html.text ""
         ]
 
 
@@ -510,10 +613,10 @@ viewErrorMessage inputValue deadEnds =
             "font-mono bg-gray-200 px-1 rounded text-gray-700"
 
         viewFunctionWithError col =
-            Html.div
-                []
-                [ Html.pre [] [ Html.text inputValue ]
-                , Html.pre [] [ Html.text (String.repeat (col - 1) " " ++ "^") ]
+            Html.pre []
+                [ Html.text inputValue
+                , Html.text "\n"
+                , Html.text (String.repeat (col - 1) " " ++ "↑")
                 ]
     in
     Html.div []
@@ -555,7 +658,7 @@ viewErrorMessage inputValue deadEnds =
                 else
                     [ viewFunctionWithError col
                     , Html.text "We couldn't understand some characters at the end of your function. "
-                    , Html.text "Try deleting the last bit!"
+                    , Html.text "Try deleting the last part!"
                     ]
 
             UnknownError ->
@@ -582,15 +685,15 @@ deadEndsToErrorMessage deadEnds =
                 Parser.ExpectingFloat ->
                     ExpectingValue col
 
-                Parser.ExpectingKeyword _ ->
-                    ExpectingValue col
-
                 Parser.ExpectingSymbol sym ->
                     if sym == ")" then
                         ExpectingClosingParenthesis col
 
                     else if sym == "(" then
                         ExpectingOpeningParenthesis col
+
+                    else if sym == "x" then
+                        ExpectingValue col
 
                     else
                         deadEndsToErrorMessage deadEndsTail
