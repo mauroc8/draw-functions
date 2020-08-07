@@ -63,8 +63,8 @@ export default class Graph extends HTMLElement {
         // Update attributes
 
         this.offset = {
-            x: (Number(this.getAttribute("offset-x")) || 60) + 0.5,
-            y: (Number(this.getAttribute("offset-y")) || 60) + 0.5,
+            x: (Number(this.getAttribute("offset-x"))) + 0.5,
+            y: (Number(this.getAttribute("offset-y"))) + 0.5,
         };
 
         this.scale = {

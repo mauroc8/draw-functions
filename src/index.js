@@ -25,3 +25,7 @@ app.ports.saveSecondInputValue.subscribe(function (secondInputValue) {
 window.addEventListener("touchend", function (event) {
 	app.ports.onTouchEnd.send(event);
 });
+
+window.addEventListener("touchmove", function (event) {
+	app.ports.onTouchMove.send(event);
+});

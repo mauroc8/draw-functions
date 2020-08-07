@@ -129,6 +129,11 @@ distance a b =
     sqrt (toFloat (b.x - a.x) ^ 2 + toFloat (b.y - a.y) ^ 2)
 
 
+intVector2Average : IntVector2 -> IntVector2 -> IntVector2
+intVector2Average a b =
+    { x = (a.x + b.x) // 2, y = (a.y + b.y) // 2 }
+
+
 type TouchState
     = NotTouching
     | DraggingTouch IntVector2 IntVector2
@@ -155,6 +160,7 @@ type Msg
     | TouchStartedOnGraph (List IntVector2)
     | TouchMovedOnGraph (List IntVector2)
     | TouchEnded
+    | TouchMovedWhileResizingGraph (List IntVector2)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -231,6 +237,14 @@ update msg model =
             , Cmd.none
             )
 
+        TouchMovedWhileResizingGraph (touch :: touches) ->
+            ( updateGraphHeight touch.y model
+            , Cmd.none
+            )
+
+        TouchMovedWhileResizingGraph _ ->
+            ( model, Cmd.none )
+
         TouchStartedOnGraph touches ->
             ( startTouching touches model, Cmd.none )
 
@@ -245,9 +259,6 @@ port saveFirstInputValue : String -> Cmd msg
 
 
 port saveSecondInputValue : String -> Cmd msg
-
-
-port onTouchEnd : (Json.Decode.Value -> msg) -> Sub msg
 
 
 startTouching : List IntVector2 -> Model -> Model
@@ -272,10 +283,10 @@ startTouching touches model =
 handleTouchMove : List IntVector2 -> Model -> Model
 handleTouchMove touches model =
     case ( model.touchState, touches ) of
-        ( Scaling _ last, touch1 :: touch2 :: touchesTail ) ->
+        ( Scaling initial _, touch1 :: touch2 :: touchesTail ) ->
             { model
                 | touchState =
-                    Scaling last ( touch1, touch2 )
+                    Scaling initial ( touch1, touch2 )
             }
 
         ( DraggingTouch initial last, touch1 :: [] ) ->
@@ -291,10 +302,10 @@ handleTouchMove touches model =
 endTouching : Model -> Model
 endTouching model =
     case model.touchState of
-        Scaling ( last1, last2 ) ( current1, current2 ) ->
-            zoomGraphIntoPosition
-                (clamp 0.2 2.5 <| distance current1 current2 / distance last1 last2)
-                current1
+        Scaling initial current ->
+            zoomGraphIntoTouches
+                initial
+                current
                 { model
                     | touchState = NotTouching
                 }
@@ -303,10 +314,51 @@ endTouching model =
             { model
                 | touchState = NotTouching
                 , offset = getDraggedOffset model
+                , isResizingGraph = False
             }
 
         _ ->
-            model
+            { model | isResizingGraph = False }
+
+
+zoomGraphIntoTouches : ( IntVector2, IntVector2 ) -> ( IntVector2, IntVector2 ) -> Model -> Model
+zoomGraphIntoTouches ( initial1, initial2 ) ( current1, current2 ) model =
+    zoomGraphIntoPosition
+        (clamp 0.2 2.5 <| distance current1 current2 / distance initial1 initial2)
+        (intVector2Average current1 current2)
+        model
+
+
+getDraggedOffset : Model -> IntVector2
+getDraggedOffset model =
+    addIntVector2 model.offset
+        (case ( model.mouseState, model.touchState ) of
+            ( Dragging initial curr, _ ) ->
+                { x = curr.x - initial.x, y = initial.y - curr.y }
+
+            ( _, DraggingTouch initial curr ) ->
+                { x = curr.x - initial.x, y = initial.y - curr.y }
+
+            _ ->
+                { x = 0, y = 0 }
+        )
+
+
+getAdjustedOffsetAndScale : Model -> ( IntVector2, IntVector2 )
+getAdjustedOffsetAndScale model =
+    case model.touchState of
+        Scaling initial current ->
+            let
+                scaledModel =
+                    zoomGraphIntoTouches
+                        initial
+                        current
+                        model
+            in
+            ( scaledModel.offset, scaledModel.scale )
+
+        _ ->
+            ( getDraggedOffset model, model.scale )
 
 
 updateFirstInputValue : String -> Model -> Model
@@ -359,7 +411,23 @@ updateWindowDimensions width height model =
 
 updateGraphHeight : Int -> Model -> Model
 updateGraphHeight height model =
-    { model | graphHeight = clamp 100 (model.windowHeight - 100) height }
+    let
+        newHeight =
+            clamp 100 (model.windowHeight - 100) height
+    in
+    { model
+        | graphHeight =
+            newHeight
+        , offset =
+            { x = model.offset.x
+            , y =
+                -- Since the offset is from the bottom left corner,
+                -- changing the graph height and keeping the offset as it is
+                -- would make it look like the upper corner of the graph is moving up.
+                -- This inversion makes the upper corner static while resizing the graph.
+                model.offset.y - model.graphHeight + newHeight
+            }
+    }
 
 
 zoomGraphIntoPosition : Float -> IntVector2 -> Model -> Model
@@ -496,12 +564,25 @@ subscriptions model =
             Sub.batch
                 [ Browser.Events.onMouseMove
                     (Json.Decode.map MouseMovedWhileResizingGraph mouseEventDecoder)
+                , onTouchMove
+                    (\value ->
+                        Json.Decode.decodeValue
+                            (Json.Decode.map TouchMovedWhileResizingGraph touchEventDecoder)
+                            value
+                            |> Result.withDefault NoOp
+                    )
                 ]
 
           else
             Sub.none
         , onTouchEnd (always TouchEnded)
         ]
+
+
+port onTouchEnd : (Json.Decode.Value -> msg) -> Sub msg
+
+
+port onTouchMove : (Json.Decode.Value -> msg) -> Sub msg
 
 
 
@@ -525,6 +606,10 @@ view model =
                 (Json.Decode.succeed StartedResizingGraph
                     |> Json.Decode.map alwaysPreventDefault
                 )
+            , Evts.preventDefaultOn "touchstart"
+                (Json.Decode.succeed StartedResizingGraph
+                    |> Json.Decode.map alwaysPreventDefault
+                )
             ]
             []
         , Html.div
@@ -541,26 +626,11 @@ view model =
         ]
 
 
-getDraggedOffset : Model -> IntVector2
-getDraggedOffset model =
-    addIntVector2 model.offset
-        (case ( model.mouseState, model.touchState ) of
-            ( Dragging initial curr, _ ) ->
-                { x = curr.x - initial.x, y = initial.y - curr.y }
-
-            ( _, DraggingTouch initial curr ) ->
-                { x = curr.x - initial.x, y = initial.y - curr.y }
-
-            _ ->
-                { x = 0, y = 0 }
-        )
-
-
 graphElement : Model -> Html Msg
 graphElement model =
     let
-        draggedOffset =
-            getDraggedOffset model
+        ( draggedOffset, adjustedScale ) =
+            getAdjustedOffsetAndScale model
 
         cursorClass =
             case model.mouseState of
@@ -580,8 +650,8 @@ graphElement model =
         , Attr.attribute "height" (String.fromInt model.graphHeight)
         , Attr.attribute "offset-x" (String.fromInt draggedOffset.x)
         , Attr.attribute "offset-y" (String.fromInt draggedOffset.y)
-        , Attr.attribute "scale-x" (String.fromInt model.scale.x)
-        , Attr.attribute "scale-y" (String.fromInt model.scale.y)
+        , Attr.attribute "scale-x" (String.fromInt adjustedScale.x)
+        , Attr.attribute "scale-y" (String.fromInt adjustedScale.y)
         , Evts.on "mousedown" (Json.Decode.map MouseDownOnGraph mouseEventDecoder)
         , Evts.on "mousemove" (Json.Decode.map MouseMovedOnGraph mouseEventDecoder)
         , Attr.class cursorClass
