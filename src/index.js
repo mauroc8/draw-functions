@@ -21,3 +21,7 @@ app.ports.saveFirstInputValue.subscribe(function (firstInputValue) {
 app.ports.saveSecondInputValue.subscribe(function (secondInputValue) {
 	localStorage.setItem("secondInputValue", secondInputValue);
 });
+
+window.addEventListener("touchend", function (event) {
+	app.ports.onTouchEnd.send(event);
+});

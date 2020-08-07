@@ -3,6 +3,7 @@ port module Main exposing (main)
 import Browser
 import Browser.Dom
 import Browser.Events
+import ErrorMessage
 import Expression
 import Html exposing (Html)
 import Html.Attributes as Attr
@@ -37,6 +38,7 @@ type alias Model =
     , mouseState : MouseState
     , isResizingGraph : Bool
     , windowHeight : Int
+    , touchState : TouchState
     }
 
 
@@ -56,12 +58,14 @@ init flags =
                 { inputValue = firstInputValue
                 , parseError = Nothing
                 , stringFunction = "-9999"
+                , color = Blue
                 }
       , secondFunction =
             updateFunctionModel secondInputValue
                 { inputValue = secondInputValue
                 , parseError = Nothing
                 , stringFunction = "-9999"
+                , color = Green
                 }
       , graphWidth = 300
       , graphHeight = 350
@@ -70,6 +74,7 @@ init flags =
       , mouseState = NotClicking
       , isResizingGraph = False
       , windowHeight = 100
+      , touchState = NotTouching
       }
     , Task.perform GotBrowserViewport Browser.Dom.getViewport
     )
@@ -90,7 +95,13 @@ type alias FunctionModel =
     { inputValue : String
     , parseError : Maybe ( List Parser.DeadEnd, ErrorViewState )
     , stringFunction : String
+    , color : FunctionColor
     }
+
+
+type FunctionColor
+    = Blue
+    | Green
 
 
 type ErrorViewState
@@ -113,6 +124,17 @@ addIntVector2 a b =
     { x = a.x + b.x, y = a.y + b.y }
 
 
+distance : IntVector2 -> IntVector2 -> Float
+distance a b =
+    sqrt (toFloat (b.x - a.x) ^ 2 + toFloat (b.y - a.y) ^ 2)
+
+
+type TouchState
+    = NotTouching
+    | DraggingTouch IntVector2 IntVector2
+    | Scaling ( IntVector2, IntVector2 ) ( IntVector2, IntVector2 )
+
+
 
 --- UPDATE
 
@@ -130,6 +152,9 @@ type Msg
     | ClickedOnHelpButton FunctionColor
     | StartedResizingGraph
     | MouseMovedWhileResizingGraph IntVector2
+    | TouchStartedOnGraph (List IntVector2)
+    | TouchMovedOnGraph (List IntVector2)
+    | TouchEnded
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -177,7 +202,17 @@ update msg model =
             )
 
         WheelEvtOnGraph deltaY mouseCoords ->
-            ( updateGraphScale deltaY mouseCoords model
+            ( zoomGraphIntoPosition
+                -- onwheel event has deltaY "inverted" in my PC
+                -- The first argument here will be multiplied to the old scale
+                (if deltaY > 0 then
+                    0.9
+
+                 else
+                    1.1
+                )
+                mouseCoords
+                model
             , Cmd.none
             )
 
@@ -196,11 +231,82 @@ update msg model =
             , Cmd.none
             )
 
+        TouchStartedOnGraph touches ->
+            ( startTouching touches model, Cmd.none )
+
+        TouchMovedOnGraph touches ->
+            ( handleTouchMove touches model, Cmd.none )
+
+        TouchEnded ->
+            ( endTouching model, Cmd.none )
+
 
 port saveFirstInputValue : String -> Cmd msg
 
 
 port saveSecondInputValue : String -> Cmd msg
+
+
+port onTouchEnd : (Json.Decode.Value -> msg) -> Sub msg
+
+
+startTouching : List IntVector2 -> Model -> Model
+startTouching touches model =
+    case touches of
+        touch1 :: touch2 :: touchesTail ->
+            { model
+                | touchState =
+                    Scaling ( touch1, touch2 ) ( touch1, touch2 )
+            }
+
+        touch1 :: [] ->
+            { model
+                | touchState =
+                    DraggingTouch touch1 touch1
+            }
+
+        _ ->
+            model
+
+
+handleTouchMove : List IntVector2 -> Model -> Model
+handleTouchMove touches model =
+    case ( model.touchState, touches ) of
+        ( Scaling _ last, touch1 :: touch2 :: touchesTail ) ->
+            { model
+                | touchState =
+                    Scaling last ( touch1, touch2 )
+            }
+
+        ( DraggingTouch initial last, touch1 :: [] ) ->
+            { model
+                | touchState =
+                    DraggingTouch initial touch1
+            }
+
+        _ ->
+            model
+
+
+endTouching : Model -> Model
+endTouching model =
+    case model.touchState of
+        Scaling ( last1, last2 ) ( current1, current2 ) ->
+            zoomGraphIntoPosition
+                (clamp 0.2 2.5 <| distance current1 current2 / distance last1 last2)
+                current1
+                { model
+                    | touchState = NotTouching
+                }
+
+        DraggingTouch initial current ->
+            { model
+                | touchState = NotTouching
+                , offset = getDraggedOffset model
+            }
+
+        _ ->
+            model
 
 
 updateFirstInputValue : String -> Model -> Model
@@ -256,16 +362,9 @@ updateGraphHeight height model =
     { model | graphHeight = clamp 100 (model.windowHeight - 100) height }
 
 
-updateGraphScale : Float -> IntVector2 -> Model -> Model
-updateGraphScale deltaY mousePosition model =
+zoomGraphIntoPosition : Float -> IntVector2 -> Model -> Model
+zoomGraphIntoPosition scaleAdjustment mousePosition model =
     let
-        scaleAdjustment =
-            if deltaY > 0 then
-                0.9
-
-            else
-                1.1
-
         newScale =
             { x =
                 toFloat model.scale.x
@@ -356,28 +455,32 @@ stopClicking model =
 
 toggleHelpMessage : FunctionColor -> Model -> Model
 toggleHelpMessage color model =
-    case color of
-        Blue ->
-            { model | firstFunction = toggleFunctionHelpMessage model.firstFunction }
-
-        Green ->
-            { model | secondFunction = toggleFunctionHelpMessage model.secondFunction }
-
-
-toggleFunctionHelpMessage : FunctionModel -> FunctionModel
-toggleFunctionHelpMessage functionModel =
-    { functionModel
-        | parseError =
-            case functionModel.parseError of
-                Just ( deadEnds, Opened ) ->
-                    Just ( deadEnds, Closed )
-
-                Just ( deadEnds, Closed ) ->
-                    Just ( deadEnds, Opened )
-
-                Nothing ->
-                    Nothing
+    { model
+        | firstFunction =
+            toggleFunctionHelpMessage color model.firstFunction
+        , secondFunction =
+            toggleFunctionHelpMessage color model.secondFunction
     }
+
+
+toggleFunctionHelpMessage : FunctionColor -> FunctionModel -> FunctionModel
+toggleFunctionHelpMessage color functionModel =
+    if functionModel.color == color then
+        { functionModel
+            | parseError =
+                case functionModel.parseError of
+                    Just ( deadEnds, Opened ) ->
+                        Just ( deadEnds, Closed )
+
+                    Just ( deadEnds, Closed ) ->
+                        Just ( deadEnds, Opened )
+
+                    Nothing ->
+                        Nothing
+        }
+
+    else
+        functionModel
 
 
 
@@ -397,6 +500,7 @@ subscriptions model =
 
           else
             Sub.none
+        , onTouchEnd (always TouchEnded)
         ]
 
 
@@ -404,18 +508,15 @@ subscriptions model =
 --- VIEW
 
 
-type FunctionColor
-    = Blue
-    | Green
-
-
 view : Model -> Html Msg
 view model =
     Html.div
-        [ Attr.class "font-sans text-gray-900"
+        [ Attr.class "font-sans text-gray-900 w-full"
         ]
         [ Html.h1
-            [ Attr.class "font-bold mx-2 mt-2 text-gray-600 absolute hover:text-gray-800 transition duration-300 text-sm" ]
+            [ Attr.class "font-bold mx-2 mt-2 text-gray-600 absolute hover:text-gray-800"
+            , Attr.class "transition duration-300 text-sm"
+            ]
             [ Html.text "DRAW FUNCTIONS" ]
         , graphElement model
         , Html.div
@@ -430,12 +531,10 @@ view model =
             [ Attr.class "md:flex" ]
             [ functionInput
                 { functionModel = model.firstFunction
-                , color = Blue
                 , onInputMsg = UpdateFirstInputValue
                 }
             , functionInput
                 { functionModel = model.secondFunction
-                , color = Green
                 , onInputMsg = UpdateSecondInputValue
                 }
             ]
@@ -445,8 +544,11 @@ view model =
 getDraggedOffset : Model -> IntVector2
 getDraggedOffset model =
     addIntVector2 model.offset
-        (case model.mouseState of
-            Dragging initial curr ->
+        (case ( model.mouseState, model.touchState ) of
+            ( Dragging initial curr, _ ) ->
+                { x = curr.x - initial.x, y = initial.y - curr.y }
+
+            ( _, DraggingTouch initial curr ) ->
                 { x = curr.x - initial.x, y = initial.y - curr.y }
 
             _ ->
@@ -487,13 +589,65 @@ graphElement model =
             (Json.Decode.map2 WheelEvtOnGraph wheelEventDecoder mouseEventDecoder
                 |> Json.Decode.map alwaysPreventDefault
             )
+        , Evts.preventDefaultOn "touchstart"
+            (Json.Decode.map TouchStartedOnGraph touchEventDecoder
+                |> Json.Decode.map alwaysPreventDefault
+            )
+        , Evts.preventDefaultOn "touchmove"
+            (Json.Decode.map TouchMovedOnGraph touchEventDecoder
+                |> Json.Decode.map alwaysPreventDefault
+            )
         ]
         []
+
+
+
+--- EVENT DECODERS
+{- This multi-touch event decoder was written using
+   https://github.com/mpizenberg/elm-touch-events/blob/master/src/MultiTouch.elm
+   as a reference.
+-}
+
+
+touchEventDecoder : Json.Decode.Decoder (List IntVector2)
+touchEventDecoder =
+    Json.Decode.field "targetTouches"
+        (Json.Decode.field "length" Json.Decode.int
+            |> Json.Decode.andThen
+                (\length ->
+                    List.range 0 (length - 1)
+                        |> List.map decodeTouchAt
+                        |> List.foldr (Json.Decode.map2 (::)) (Json.Decode.succeed [])
+                )
+        )
+
+
+decodeTouchAt : Int -> Json.Decode.Decoder IntVector2
+decodeTouchAt x =
+    Json.Decode.field (String.fromInt x) <|
+        Json.Decode.map2 IntVector2
+            (Json.Decode.field "pageX" Json.Decode.float
+                |> Json.Decode.map round
+            )
+            (Json.Decode.field "pageY" Json.Decode.float
+                |> Json.Decode.map round
+            )
 
 
 wheelEventDecoder : Json.Decode.Decoder Float
 wheelEventDecoder =
     Json.Decode.field "deltaY" Json.Decode.float
+
+
+mouseEventDecoder : Json.Decode.Decoder IntVector2
+mouseEventDecoder =
+    Json.Decode.map2 IntVector2
+        (Json.Decode.field "pageX" Json.Decode.float
+            |> Json.Decode.map round
+        )
+        (Json.Decode.field "pageY" Json.Decode.float
+            |> Json.Decode.map round
+        )
 
 
 alwaysPreventDefault : Msg -> ( Msg, Bool )
@@ -503,15 +657,17 @@ alwaysPreventDefault msg =
 
 functionInput :
     { functionModel : FunctionModel
-    , color : FunctionColor
     , onInputMsg : String -> Msg
     }
     -> Html Msg
-functionInput { functionModel, color, onInputMsg } =
+functionInput { functionModel, onInputMsg } =
     let
         {- I write it like this because when we trim our unused Css classes,
            we need to have all the class names we're using written explicitly.
         -}
+        color =
+            functionModel.color
+
         textColor600 =
             case color of
                 Blue ->
@@ -581,128 +737,8 @@ functionInput { functionModel, color, onInputMsg } =
             Just ( deadEnds, Opened ) ->
                 Html.div
                     [ Attr.class "text-xs bg-red-100 rounded-md p-2 border border-red-200 mt-2" ]
-                    [ viewErrorMessage functionModel.inputValue deadEnds ]
+                    [ ErrorMessage.view functionModel.inputValue deadEnds ]
 
             _ ->
                 Html.text ""
         ]
-
-
-mouseEventDecoder : Json.Decode.Decoder IntVector2
-mouseEventDecoder =
-    Json.Decode.map2 IntVector2
-        (Json.Decode.field "clientX" Json.Decode.int)
-        (Json.Decode.field "clientY" Json.Decode.int)
-
-
-type ErrorMessage
-    = ExpectingValue Int
-    | ExpectingClosingParenthesis Int
-    | ExpectingOpeningParenthesis Int
-    | ExpectingEnd Int
-    | UnknownError
-
-
-viewErrorMessage : String -> List Parser.DeadEnd -> Html a
-viewErrorMessage inputValue deadEnds =
-    let
-        errorMessage =
-            deadEndsToErrorMessage deadEnds
-
-        functionFragmentClass =
-            "font-mono bg-gray-200 px-1 rounded text-gray-700"
-
-        viewFunctionWithError col =
-            Html.pre []
-                [ Html.text inputValue
-                , Html.text "\n"
-                , Html.text (String.repeat (col - 1) " " ++ "↑")
-                ]
-    in
-    Html.div []
-        (case errorMessage of
-            ExpectingValue col ->
-                [ viewFunctionWithError col
-                , Html.text "We were expecting some value, like "
-                , Html.span [ Attr.class functionFragmentClass ] [ Html.text "5" ]
-                , Html.text ", "
-                , Html.span [ Attr.class functionFragmentClass ] [ Html.text "2x" ]
-                , Html.text " or "
-                , Html.span [ Attr.class functionFragmentClass ] [ Html.text "sin(x)" ]
-                , Html.text "..."
-                ]
-
-            ExpectingClosingParenthesis col ->
-                [ viewFunctionWithError col
-                , Html.text "We were expecting a closing parenthesis!"
-                ]
-
-            ExpectingOpeningParenthesis col ->
-                [ viewFunctionWithError col
-                , Html.text "We were expecting an opening parenthesis! Remember parenthesis are always "
-                , Html.text " necessary when writing functions, for example: "
-                , Html.span [ Attr.class functionFragmentClass ] [ Html.text "sin(x)" ]
-                , Html.text "."
-                ]
-
-            ExpectingEnd col ->
-                if col == 1 then
-                    [ viewFunctionWithError col
-                    , Html.text "We couldn't understand your function. Try something like "
-                    , Html.span [ Attr.class functionFragmentClass ] [ Html.text "sin(x)" ]
-                    , Html.text " or "
-                    , Html.span [ Attr.class functionFragmentClass ] [ Html.text "2x^2 + x - 5" ]
-                    , Html.text "... If you're lost, please read the tutorial!"
-                    ]
-
-                else
-                    [ viewFunctionWithError col
-                    , Html.text "We couldn't understand some characters at the end of your function. "
-                    , Html.text "Try deleting the last part!"
-                    ]
-
-            UnknownError ->
-                [ Html.i [] [ Html.text "(visibly awkard) " ]
-                , Html.text "Mmm... seems like we can't read your function, and we don't know exactly why. "
-                , Html.text "Please, read the tutorial to learn how to use this app. "
-                , Html.text "If you think this is a bug, please report an issue in the github repository!"
-                ]
-        )
-
-
-deadEndsToErrorMessage : List Parser.DeadEnd -> ErrorMessage
-deadEndsToErrorMessage deadEnds =
-    let
-        maximumCol =
-            List.foldl (.col >> max) 0 deadEnds
-
-        filteredDeadEnds =
-            List.filter (.col >> (==) maximumCol) deadEnds
-    in
-    case deadEnds of
-        { col, problem } :: deadEndsTail ->
-            case problem of
-                Parser.ExpectingFloat ->
-                    ExpectingValue col
-
-                Parser.ExpectingSymbol sym ->
-                    if sym == ")" then
-                        ExpectingClosingParenthesis col
-
-                    else if sym == "(" then
-                        ExpectingOpeningParenthesis col
-
-                    else if sym == "x" then
-                        ExpectingValue col
-
-                    else
-                        deadEndsToErrorMessage deadEndsTail
-
-                Parser.ExpectingEnd ->
-                    ExpectingEnd col
-
-                _ ->
-                    deadEndsToErrorMessage deadEndsTail
-
-        _ ->
-            UnknownError
