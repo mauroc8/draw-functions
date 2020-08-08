@@ -2,7 +2,7 @@
 
 [Dibujar y comparar funciones matemáticas.](https://mauroc8.github.io/draw-functions/)
 
-![Demo showing how to use this app](docs/demo.gif)
+![Demo showing how to use this app](demo.gif)
 
 [ENTRAR AHORA!](https://mauroc8.github.io/draw-functions/)
 
