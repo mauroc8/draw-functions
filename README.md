@@ -1,12 +1,12 @@
 # DRAW FUNCTIONS
 
-> [Ver README en español.](docs/README.es.md)
-
 [Quickly draw and compare mathematical functions](https://mauroc8.github.io/draw-functions/)
 
 ![Demo showing how to use this app](docs/demo.gif)
 
 [TRY IT NOW!](https://mauroc8.github.io/draw-functions/)
+
+> [Ver README en español.](docs/README.es.md)
 
 ## Motivation
 
