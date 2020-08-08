@@ -7,7 +7,7 @@ BUGS
 TODO:
 
 [x] Add asin, acos, etc
-[ ] Add PI and E constants
+[x] Add PI and E constants
 [x] Consider using Parser.Advanced for better error messages (Not really necessary)
 [x] localStorage
-[ ] Add link to tutorial in error messages
+[x] Add link to the repository

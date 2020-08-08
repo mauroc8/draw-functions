@@ -65,8 +65,16 @@ view inputValue deadEnds =
                     , Html.text "We couldn't understand your function. Try something like "
                     , Html.span [ Attr.class functionFragmentClass ] [ Html.text "sin(x)" ]
                     , Html.text " or "
-                    , Html.span [ Attr.class functionFragmentClass ] [ Html.text "2x^2 + x - 5" ]
-                    , Html.text "... If you're lost, please read the tutorial!"
+                    , Html.span [ Attr.class functionFragmentClass ] [ Html.text "2x^2+x-5" ]
+                    , Html.text "."
+                    , Html.br [] []
+                    , Html.text "If you're lost, please read the "
+                    , Html.a
+                        [ Attr.href "https://github.com/mauroc8/draw-functions"
+                        , Attr.class "text-blue-500 hover:text-green-500"
+                        ]
+                        [ Html.text "syntax reference" ]
+                    , Html.text "!"
                     ]
 
                 else
@@ -78,8 +86,17 @@ view inputValue deadEnds =
             UnknownError ->
                 [ Html.i [] [ Html.text "(visibly awkard) " ]
                 , Html.text "Mmm... seems like we can't read your function, and we don't know exactly why. "
-                , Html.text "Please, read the tutorial to learn how to use this app. "
-                , Html.text "If you think this is a bug, please report an issue in the github repository!"
+                , Html.text "Please, read the "
+                , Html.a [ Attr.href "https://github.com/mauroc8/draw-functions" ]
+                    [ Html.text "syntax reference" ]
+                , Html.text " to learn how to use this app. "
+                , Html.text "If you think this is a bug, please report an issue in the "
+                , Html.a
+                    [ Attr.href "https://github.com/mauroc8/draw-functions"
+                    , Attr.class "text-blue-500 hover:text-green-500"
+                    ]
+                    [ Html.text "github repository" ]
+                , Html.text "!"
                 ]
         )
 

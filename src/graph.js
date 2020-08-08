@@ -63,8 +63,8 @@ export default class Graph extends HTMLElement {
         // Update attributes
 
         this.offset = {
-            x: (Number(this.getAttribute("offset-x"))) + 0.5,
-            y: (Number(this.getAttribute("offset-y"))) + 0.5,
+            x: Number(this.getAttribute("offset-x")) + 0.5,
+            y: Number(this.getAttribute("offset-y")) + 0.5,
         };
 
         this.scale = {
@@ -207,14 +207,17 @@ export default class Graph extends HTMLElement {
 
             let viewportY = this.worldToViewport({ x: 0, y: y }).y;
 
-            if (
-                viewportX === 0 ||
-                (this.isOutOfBounds(lastViewportY) &&
-                    this.isOutOfBounds(viewportY))
-            ) {
-                cx.moveTo(viewportX, viewportY);
-            } else {
-                cx.lineTo(viewportX, viewportY);
+            if (!Number.isNaN(viewportY)) {
+                if (
+                    viewportX === 0 ||
+                    Number.isNaN(lastViewportY) ||
+                    (this.isOutOfBounds(lastViewportY) &&
+                        this.isOutOfBounds(viewportY))
+                ) {
+                    cx.moveTo(viewportX, viewportY);
+                } else {
+                    cx.lineTo(viewportX, viewportY);
+                }
             }
 
             lastViewportY = viewportY;

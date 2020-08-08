@@ -608,6 +608,18 @@ view model =
                 , onInputMsg = UpdateSecondInputValue
                 }
             ]
+        , Html.div
+            [ Attr.class "mx-2 mt-6 text-sm text-gray-600"
+            ]
+            [ Html.a
+                [ Attr.href "https://github.com/mauroc8/draw-functions"
+                , Attr.class "text-blue-400 hover:text-green-400"
+                ]
+                [ Html.text "View source & syntax reference"
+                ]
+            , Html.br [] []
+            , Html.text "Mauro Cano © 2020"
+            ]
         ]
 
 
