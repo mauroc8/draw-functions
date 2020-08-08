@@ -12,12 +12,13 @@ We use the symbols `+`, `-`, `*` and `/` for sum, subtraction, multiplication an
 
 We use `^` for power. For example *x²* is written as `x^2`.
 
-There is a shorter way to write multiplications. `2*x` can be written as `2x`.[^1]
+There is a shorter way to write multiplications. `2*x` can be written as `2x`.*
 
-We use `sin(...)` to write functions calls. Supported functions are `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `abs` (absolute value) and `sqrt`.[^2]
+We use `sin(...)` to write functions calls. Supported functions are `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `abs` (absolute value) and `sqrt`.**
 
-[^1]: There are some subtleties here. `1/2*x` is equal to `(1/2)*x`, but `1/2x` is equal to `1/(2*x)`. In other words, multiplication not using `*` has more [precedence](https://en.wikipedia.org/wiki/Order_of_operations).
-[^2]: The nth-root of `x` can be written as `x^(1/n)` where `n` is a number or an expression. 
+* There are some subtleties here. `1/2*x` is equal to `(1/2)*x`, but `1/2x` is equal to `1/(2*x)`. In other words, multiplication not using `*` has more [precedence](https://en.wikipedia.org/wiki/Order_of_operations).
+
+** The nth-root of `x` can be written as `x^(1/n)` where `n` is a number or an expression. 
 
 ## Motivation
 
