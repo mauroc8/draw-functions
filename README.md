@@ -6,7 +6,7 @@
 
 [TRY IT NOW!](https://mauroc8.github.io/draw-functions/)
 
-> [Ver README en español.](docs/README.es.md)
+> Para ver la versión en español de este README, [cliquear aquí](docs/README.es.md).
 
 ## Motivation
 
