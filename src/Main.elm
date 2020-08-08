@@ -586,7 +586,7 @@ view model =
             [ Html.text "DRAW FUNCTIONS" ]
         , graphElement model
         , Html.div
-            [ Attr.class "block w-full bg-gray-200 cursor-row-resize h-1"
+            [ Attr.class "block w-full bg-gray-200 cursor-row-resize h-2 sm:h-1"
             , Evts.preventDefaultOn "mousedown"
                 (Json.Decode.succeed StartedResizingGraph
                     |> Json.Decode.map alwaysPreventDefault
