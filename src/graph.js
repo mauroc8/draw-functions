@@ -12,7 +12,7 @@ export default class Graph extends HTMLElement {
         this.scale = { x: 20, y: 20 };
     }
 
-    // Lyfecycle events
+    // Lifecycle events
 
     connectedCallback() {
         this.drawGraph();
@@ -94,7 +94,7 @@ export default class Graph extends HTMLElement {
     drawGrid() {
         let { cx, width, height } = this;
 
-        // Drawing bounds, ie. the lower and higher positions in world space that we care to draw
+        // Drawing bounds, i.e. the lower and higher positions in world space that we care to draw
 
         let lowerBound = this.viewportToWorld({ x: 0, y: this.height });
 
@@ -168,10 +168,29 @@ export default class Graph extends HTMLElement {
     drawFunction(functionName, functionColor) {
         let cx = this.cx;
 
-        // THIS is awkard to some people. It's basically making an `eval`
-        // BUT it's the fastest way possible.
-        // Consider we need to evaluate the expression ~1024 times each redraw (if the screen is big enough).
-        // (And having faster redraws allows us to do fancy animations!)
+        /* We use the Function constructor to produce a function from a string like "Math.sin(x)".
+
+        Is this unsafe? The stringified function is produced in Elm code. It is not read directly from
+        input. This means that if you write "alert(1)" in the input, you don't actually execute that code.
+        Instead, you try to parse it and fail, so the actual value you read here will be some fallback, like
+        "-999999".
+
+        I claim no one will be able to inject code in this app (unless github servers are hacked, but then
+        it won't make a difference if I'm using new Function or not).
+
+        Why not taking a different approach? Evaluating functions as native code is the fastest way I can think of.
+        And performance is important! If you pay attention, you'll notice that dragging the graph viewport
+        sometimes looks glitchy because the drawing takes too long.
+
+        What are other ways to do this, without using the Function constructor? I could represent expressions as
+        JSON values that get evaluated using a recursive function. For example, the expression `x + 5` could be
+        represented like:
+
+            { type: "+", args: [ { type: "x" }, { type: "number", value: 5 } ] }
+
+        This would be way slower, and thus I decided to avoid it.
+
+        */
 
         let fn = new Function("x", "return " + this.getAttribute(functionName));
 

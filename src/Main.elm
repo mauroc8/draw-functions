@@ -11,6 +11,7 @@ import Html.Events as Evts
 import Json.Decode
 import Json.Encode
 import Parser exposing ((|.), (|=), Parser)
+import Point exposing (Point)
 import Task
 
 
@@ -33,8 +34,8 @@ type alias Model =
     , secondFunction : FunctionModel
     , graphWidth : Int
     , graphHeight : Int
-    , offset : IntVector2
-    , scale : IntVector2
+    , offset : Point
+    , scale : Point
     , mouseState : MouseState
     , isResizingGraph : Bool
     , windowHeight : Int
@@ -111,33 +112,14 @@ type ErrorViewState
 
 type MouseState
     = NotClicking
-    | Clicking IntVector2
-    | Dragging IntVector2 IntVector2
-
-
-type alias IntVector2 =
-    { x : Int, y : Int }
-
-
-addIntVector2 : IntVector2 -> IntVector2 -> IntVector2
-addIntVector2 a b =
-    { x = a.x + b.x, y = a.y + b.y }
-
-
-distance : IntVector2 -> IntVector2 -> Float
-distance a b =
-    sqrt (toFloat (b.x - a.x) ^ 2 + toFloat (b.y - a.y) ^ 2)
-
-
-intVector2Average : IntVector2 -> IntVector2 -> IntVector2
-intVector2Average a b =
-    { x = (a.x + b.x) // 2, y = (a.y + b.y) // 2 }
+    | Clicking Point
+    | Dragging Point Point
 
 
 type TouchState
     = NotTouching
-    | DraggingTouch IntVector2 IntVector2
-    | Scaling ( IntVector2, IntVector2 ) ( IntVector2, IntVector2 )
+    | DraggingTouch Point Point
+    | Scaling ( Point, Point ) ( Point, Point )
 
 
 
@@ -150,17 +132,17 @@ type Msg
     | UpdateSecondInputValue String
     | ResizedWindow Int Int
     | GotBrowserViewport Browser.Dom.Viewport
-    | MouseDownOnGraph IntVector2
-    | MouseMovedOnGraph IntVector2
+    | MouseDownOnGraph Point
+    | MouseMovedOnGraph Point
     | MouseUp
-    | WheelEvtOnGraph Float IntVector2
+    | WheelEvtOnGraph Float Point
     | ClickedOnHelpButton FunctionColor
     | StartedResizingGraph
-    | MouseMovedWhileResizingGraph IntVector2
-    | TouchStartedOnGraph (List IntVector2)
-    | TouchMovedOnGraph (List IntVector2)
+    | MouseMovedWhileResizingGraph Point
+    | TouchStartedOnGraph (List Point)
+    | TouchMovedOnGraph (List Point)
     | TouchEnded
-    | TouchMovedWhileResizingGraph (List IntVector2)
+    | TouchMovedWhileResizingGraph (List Point)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -261,7 +243,7 @@ port saveFirstInputValue : String -> Cmd msg
 port saveSecondInputValue : String -> Cmd msg
 
 
-startTouching : List IntVector2 -> Model -> Model
+startTouching : List Point -> Model -> Model
 startTouching touches model =
     case touches of
         touch1 :: touch2 :: touchesTail ->
@@ -280,7 +262,7 @@ startTouching touches model =
             model
 
 
-handleTouchMove : List IntVector2 -> Model -> Model
+handleTouchMove : List Point -> Model -> Model
 handleTouchMove touches model =
     case ( model.touchState, touches ) of
         ( Scaling initial _, touch1 :: touch2 :: touchesTail ) ->
@@ -321,17 +303,20 @@ endTouching model =
             { model | isResizingGraph = False }
 
 
-zoomGraphIntoTouches : ( IntVector2, IntVector2 ) -> ( IntVector2, IntVector2 ) -> Model -> Model
+zoomGraphIntoTouches : ( Point, Point ) -> ( Point, Point ) -> Model -> Model
 zoomGraphIntoTouches ( initial1, initial2 ) ( current1, current2 ) model =
     zoomGraphIntoPosition
-        (clamp 0.2 2.5 <| distance current1 current2 / distance initial1 initial2)
-        (intVector2Average current1 current2)
+        (clamp 0.2 2.5 <|
+            Point.distance current1 current2
+                / Point.distance initial1 initial2
+        )
+        (Point.average current1 current2)
         model
 
 
-getDraggedOffset : Model -> IntVector2
+getDraggedOffset : Model -> Point
 getDraggedOffset model =
-    addIntVector2 model.offset
+    Point.add model.offset
         (case ( model.mouseState, model.touchState ) of
             ( Dragging initial curr, _ ) ->
                 { x = curr.x - initial.x, y = initial.y - curr.y }
@@ -344,7 +329,7 @@ getDraggedOffset model =
         )
 
 
-getAdjustedOffsetAndScale : Model -> ( IntVector2, IntVector2 )
+getAdjustedOffsetAndScale : Model -> ( Point, Point )
 getAdjustedOffsetAndScale model =
     case model.touchState of
         Scaling initial current ->
@@ -430,7 +415,7 @@ updateGraphHeight height model =
     }
 
 
-zoomGraphIntoPosition : Float -> IntVector2 -> Model -> Model
+zoomGraphIntoPosition : Float -> Point -> Model -> Model
 zoomGraphIntoPosition scaleAdjustment mousePosition model =
     let
         newScale =
@@ -486,14 +471,14 @@ zoomGraphIntoPosition scaleAdjustment mousePosition model =
     }
 
 
-startClicking : IntVector2 -> Model -> Model
+startClicking : Point -> Model -> Model
 startClicking position model =
     { model
         | mouseState = Clicking position
     }
 
 
-updateMouseState : IntVector2 -> Model -> Model
+updateMouseState : Point -> Model -> Model
 updateMouseState currentPosition model =
     case model.mouseState of
         NotClicking ->
@@ -679,7 +664,7 @@ graphElement model =
 -}
 
 
-touchEventDecoder : Json.Decode.Decoder (List IntVector2)
+touchEventDecoder : Json.Decode.Decoder (List Point)
 touchEventDecoder =
     Json.Decode.field "targetTouches"
         (Json.Decode.field "length" Json.Decode.int
@@ -692,10 +677,10 @@ touchEventDecoder =
         )
 
 
-decodeTouchAt : Int -> Json.Decode.Decoder IntVector2
+decodeTouchAt : Int -> Json.Decode.Decoder Point
 decodeTouchAt x =
     Json.Decode.field (String.fromInt x) <|
-        Json.Decode.map2 IntVector2
+        Json.Decode.map2 Point
             (Json.Decode.field "pageX" Json.Decode.float
                 |> Json.Decode.map round
             )
@@ -709,9 +694,9 @@ wheelEventDecoder =
     Json.Decode.field "deltaY" Json.Decode.float
 
 
-mouseEventDecoder : Json.Decode.Decoder IntVector2
+mouseEventDecoder : Json.Decode.Decoder Point
 mouseEventDecoder =
-    Json.Decode.map2 IntVector2
+    Json.Decode.map2 Point
         (Json.Decode.field "pageX" Json.Decode.float
             |> Json.Decode.map round
         )
@@ -783,6 +768,9 @@ functionInput { functionModel, onInputMsg } =
                             ++ " "
                             ++ focusBorderColor500
                         )
+            , Attr.autofocus True
+            , Attr.attribute "autocapitalize" "off"
+            , Attr.spellcheck False
             ]
             []
         , case functionModel.parseError of

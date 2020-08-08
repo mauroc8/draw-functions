@@ -1,4 +1,4 @@
-module Expression exposing (Expression, evaluate, parser, toStringFunction)
+module Expression exposing (Expression, parser, toStringFunction)
 
 import Parser exposing ((|.), (|=), Parser)
 
@@ -22,16 +22,13 @@ parser =
         |. Parser.end
 
 
-evaluate : Expression -> Float -> Float
-evaluate expr x =
-    evaluateExpression x expr
-
-
 type Value
     = NumberLiteral Float
     | Variable
     | Parenthesized Expression
     | FunctionCall FunctionName Expression
+    | ConstantPI
+    | ConstantE
 
 
 type FunctionName
@@ -39,6 +36,10 @@ type FunctionName
     | Cos
     | Tan
     | Abs
+    | Asin
+    | Acos
+    | Atan
+    | Sqrt
 
 
 type Factor
@@ -82,6 +83,10 @@ valueParser =
                 |= Parser.float
             , Parser.succeed Variable
                 |. Parser.symbol "x"
+            , Parser.succeed ConstantPI
+                |. Parser.symbol "PI"
+            , Parser.succeed ConstantE
+                |. Parser.symbol "E"
             , Parser.succeed Parenthesized
                 |. Parser.symbol "("
                 |. Parser.spaces
@@ -102,12 +107,24 @@ functionNameParser =
     Parser.oneOf
         [ Parser.succeed Sin
             |. Parser.keyword "sin"
+        , Parser.succeed Sin
+            |. Parser.keyword "sen"
         , Parser.succeed Cos
             |. Parser.keyword "cos"
         , Parser.succeed Tan
             |. Parser.keyword "tan"
         , Parser.succeed Abs
             |. Parser.keyword "abs"
+        , Parser.succeed Asin
+            |. Parser.keyword "asin"
+        , Parser.succeed Asin
+            |. Parser.keyword "asen"
+        , Parser.succeed Acos
+            |. Parser.keyword "acos"
+        , Parser.succeed Atan
+            |. Parser.keyword "atan"
+        , Parser.succeed Sqrt
+            |. Parser.keyword "sqrt"
         ]
 
 
@@ -268,6 +285,12 @@ valueToString value =
         FunctionCall fnName expr ->
             functionNameToString fnName ++ "(" ++ expressionToString expr ++ ")"
 
+        ConstantPI ->
+            "Math.PI"
+
+        ConstantE ->
+            "Math.E"
+
 
 functionNameToString : FunctionName -> String
 functionNameToString name =
@@ -284,80 +307,14 @@ functionNameToString name =
         Abs ->
             "Math.abs"
 
+        Asin ->
+            "Math.asin"
 
+        Acos ->
+            "Math.acos"
 
---- EVALUATE
+        Atan ->
+            "Math.atan"
 
-
-evaluateExpression : Float -> Expression -> Float
-evaluateExpression x (Expression unit units) =
-    List.foldl (+) 0 (List.map (evaluateExpressionUnit x) (unit :: units))
-
-
-evaluateExpressionUnit : Float -> ExpressionUnit -> Float
-evaluateExpressionUnit x unit =
-    case unit of
-        Added term ->
-            evaluateTerm x term
-
-        Subtracted term ->
-            0 - evaluateTerm x term
-
-
-evaluateTerm : Float -> Term -> Float
-evaluateTerm x (Term unit units) =
-    List.foldl (*) 1 (List.map (evaluateTermUnit x) (unit :: units))
-
-
-evaluateTermUnit : Float -> TermUnit -> Float
-evaluateTermUnit x unit =
-    case unit of
-        Multiplied factor ->
-            evaluateFactor x factor
-
-        Divided factor ->
-            1 / evaluateFactor x factor
-
-
-evaluateFactor : Float -> Factor -> Float
-evaluateFactor x factor =
-    case factor of
-        SimpleFactor value ->
-            evaluateValue x value
-
-        Power value value2 ->
-            evaluateValue x value ^ evaluateValue x value2
-
-        MultipliedFactor value factor2 ->
-            evaluateValue x value * evaluateFactor x factor2
-
-
-evaluateValue : Float -> Value -> Float
-evaluateValue x value =
-    case value of
-        NumberLiteral float ->
-            float
-
-        Variable ->
-            x
-
-        Parenthesized expr ->
-            evaluateExpression x expr
-
-        FunctionCall fnName expr ->
-            let
-                exprValue =
-                    evaluateExpression x expr
-            in
-            case fnName of
-                Cos ->
-                    cos exprValue
-
-                Sin ->
-                    sin exprValue
-
-                Tan ->
-                    tan exprValue
-
-                Abs ->
-                    abs exprValue
+        Sqrt ->
+            "Math.sqrt"
